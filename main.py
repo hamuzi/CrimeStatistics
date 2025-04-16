@@ -6,42 +6,38 @@ from dash import html, dcc, Output, Input
 import dash_bootstrap_components as dbc
 import json
 
-# טען קבצי GeoJSON
+""" --------------------------------------------------- backend ---------------------------------------------------- """
+
+# Json files for geo_borders (for the map)
 with open("municipalities.geojson", encoding="utf-8") as f:
     geojson_municipal = json.load(f)
 with open("districts.geojson", encoding="utf-8") as f:
     geojson_districts = json.load(f)
 
-# טען את הנתונים
-conn = sqlite3.connect("crime_2024.db")
-query = """
-    SELECT c.Yeshuv as יישוב,  c.PoliceDistrict as מחוז_משטרתי,
+conn = sqlite3.connect("crime_2024.db") # DB connection
+query = """ SELECT c.Yeshuv as יישוב,  c.PoliceDistrict as מחוז_משטרתי,
            c.StatisticGroup as סוג_עבירה, c.Quarter as רבעון, c.Year as שנה,
            COUNT(*) as כמות_פשעים
     FROM crimes_2024 c
     WHERE c.Yeshuv IS NOT NULL AND c.StatisticGroup IS NOT NULL
-    GROUP BY c.Yeshuv, c.PoliceDistrict, c.StatisticGroup, c.Quarter, c.Year
-"""
-df = pd.read_sql_query(query, conn)
+    GROUP BY c.Yeshuv, c.PoliceDistrict, c.StatisticGroup, c.Quarter, c.Year """
+df = pd.read_sql_query(query, conn) # making df table for reaching data
 conn.close()
 
-# תרגום רבעונים
-quarter_mapping = {
-    "Q1": "ינואר-מרץ",
-    "Q2": "אפריל-יוני",
-    "Q3": "יולי-ספטמבר",
-    "Q4": "אוקטובר-דצמבר"
-}
+quarter_mapping = {"Q1": "ינואר-מרץ","Q2": "אפריל-יוני","Q3": "יולי-ספטמבר","Q4": "אוקטובר-דצמבר"} # quarter types
 df["תיאור_רבעון"] = df["רבעון"].map(quarter_mapping)
-
 type_options = ["כלל העבירות"] + sorted(df["סוג_עבירה"].dropna().unique())
 quarter_options = ["כל השנה"] + sorted(df["תיאור_רבעון"].dropna().unique())
 
-# יצירת אפליקציית Dash
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+""" ---------------------------------------------------------------------------------------------------------------- """
+
+""" ----------------------------------------------- frontend ------------------------------------------------------- """
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP]) # create Dash
 app.title = "מפת פשיעה לפי יישובים"
 
-# Layout
+# --------------------------------------------------- Header -----------------------------------------------------------
+
 app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, children=[
     html.Div([
         html.Div([
@@ -63,7 +59,8 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
     }),
     html.Div(style={"display": "flex"}, children=[
 
-# אפשרויות סינון — בצד ימין
+# ------------------------------------------------ Maps filters --------------------------------------------------------
+
         html.Div(children=[
 
             html.Div([
@@ -105,7 +102,8 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 
         ] , style={"width": "40%", "padding-left": "10px", "padding-right": "10px"}),
 
-        # המפה — עכשיו בצד שמאל ומוקטנת
+# ------------------------------------------------------- Map ----------------------------------------------------------
+
         html.Div(children=[
             html.Div("ניתוחים על פי מפה", style={"fontWeight": "bold", "fontSize": "20px", "marginBottom": "10px"}),
             dcc.Graph(id="map-graph", style={"height": "500px"})
@@ -122,6 +120,8 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
     ])
 ])
 
+# ---------------------------------------------- callbacks (events) ----------------------------------------------------
+
 @app.callback(
     Output("map-graph", "figure"),
     Input("year-slider", "value"),
@@ -129,6 +129,9 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
     Input("quarter-dropdown", "value"),
     Input("toggle-switch", "value")
 )
+
+# --------------------------------------------------- Update -----------------------------------------------------------
+
 def update_map(selected_year, selected_crime, selected_quarter, toggle_value):
     filtered = df[df["שנה"] == selected_year]
     if selected_crime != "כלל העבירות":
@@ -160,5 +163,8 @@ def update_map(selected_year, selected_crime, selected_quarter, toggle_value):
     )
     return fig
 
+""" ---------------------------------------------------------------------------------------------------------------- """
+
+# ---------------------------------------------------- Main ------------------------------------------------------------
 if __name__ == '__main__':
     app.run(debug=True, port=8050)
