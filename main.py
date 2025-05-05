@@ -13,6 +13,8 @@ with open("municipalities.geojson", encoding="utf-8") as f:
     geojson_municipal = json.load(f)
 with open("districts.geojson", encoding="utf-8") as f:
     geojson_districts = json.load(f)
+# Load police stations CSV
+df_police = pd.read_csv("police_stations.csv")
 
 conn = sqlite3.connect("crime_2024.db") # DB connection
 query = """ SELECT c.Yeshuv as יישוב,  c.PoliceDistrict as מחוז_משטרתי,
@@ -98,7 +100,18 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                     options=[{"label": "הצג לפי מחוזות", "value": "district"}],
                     value=[], id="toggle-switch", switch=True, style={"textAlign": "right"}
                 )
-            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "boxShadow": "0px 0px 5px lightgray"})
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
+
+            html.Div([
+                html.Label("הצג תחנות משטרה:", style={"fontWeight": "bold", "textAlign": "right"}),
+                dbc.Checklist(
+                    options=[{"label": "הצג תחנות", "value": "stations"}],
+                    value=[],
+                    id="toggle-police",
+                    switch=True,
+                    style={"textAlign": "right"}
+                )
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "boxShadow": "0px 0px 5px lightgray"}),
 
         ] , style={"width": "40%", "padding-left": "10px", "padding-right": "10px"}),
 
@@ -106,7 +119,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 
         html.Div(children=[
             html.Div("ניתוחים על פי מפה", style={"fontWeight": "bold", "fontSize": "20px", "marginBottom": "10px"}),
-            dcc.Graph(id="map-graph", style={"height": "500px"})
+            dcc.Graph(id="map-graph", style={"height": "500px"},config={"scrollZoom": True} )
         ], style={
             "width": "100%",
             "backgroundColor": "white",
@@ -127,12 +140,13 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
     Input("year-slider", "value"),
     Input("crime-type-dropdown", "value"),
     Input("quarter-dropdown", "value"),
-    Input("toggle-switch", "value")
+    Input("toggle-switch", "value"),
+    Input("toggle-police", "value"),
 )
 
 # --------------------------------------------------- Update -----------------------------------------------------------
 
-def update_map(selected_year, selected_crime, selected_quarter, toggle_value):
+def update_map(selected_year, selected_crime, selected_quarter, toggle_value, toggle_police):
     filtered = df[df["שנה"] == selected_year]
     if selected_crime != "כלל העבירות":
         filtered = filtered[filtered["סוג_עבירה"] == selected_crime]
@@ -156,15 +170,26 @@ def update_map(selected_year, selected_crime, selected_quarter, toggle_value):
             zoom=6.5, center={"lat": 31.5, "lon": 34.75}, opacity=0.5
         )
 
+    # Add police stations if selected
+    if "stations" in toggle_police:
+        fig.add_scattermapbox(
+            lat=df_police["lat"], lon=df_police["lon"], mode="markers",
+            marker=dict(size=8, color="blue"),
+            text=df_police["Station"],
+            name="תחנת משטרה"
+        )
+
     fig.update_layout(
         margin={"r": 0, "t": 40, "l": 0, "b": 0},
         hoverlabel=dict(bgcolor="white", font_size=14),
-        title="מפת פשיעה לפי בחירה"
+        title="מפת פשיעה לפי בחירה",
     )
     return fig
 
 """ ---------------------------------------------------------------------------------------------------------------- """
 
 # ---------------------------------------------------- Main ------------------------------------------------------------
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=8050)
