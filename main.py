@@ -89,10 +89,10 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                 html.Label("בחר שנה:", style={"fontWeight": "bold"}),
                 dcc.Slider(
                     id="year-slider",
-                    min=2021, max=2025, step=1, value=2021,
-                    marks={str(y): str(y) for y in range(2021, 2026)}
+                    min=2020, max=2024, step=1, value=2024,
+                    marks={str(y): str(y) for y in range(2020, 2025)}
                 )
-            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "15px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
 
             html.Div([
                 html.Label("בחר קבוצת עבירה:", style={"fontWeight": "bold"}),
@@ -102,7 +102,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                     value="כלל העבירות",
                     style={"textAlign": "right"}
                 )
-            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "15px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
 
             html.Div([
                 html.Label("בחר רבעון:", style={"fontWeight": "bold"}),
@@ -112,7 +112,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                     value="כל השנה",
                     style={"textAlign": "right"}
                 )
-            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "15px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
 
             html.Div([
                 html.Label("הצג לפי:", style={"fontWeight": "bold"}),
@@ -120,7 +120,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                     options=[{"label": "הצג לפי מחוזות", "value": "district"}],
                     value=[], id="toggle-switch", switch=True, style={"textAlign": "right"}
                 )
-            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "15px", "marginBottom": "10px", "boxShadow": "0px 0px 5px lightgray"}),
 
             html.Div([
                 html.Label("הצג תחנות משטרה:", style={"fontWeight": "bold", "textAlign": "right"}),
@@ -131,7 +131,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                     switch=True,
                     style={"textAlign": "right"}
                 )
-            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "10px", "boxShadow": "0px 0px 5px lightgray"}),
+            ], style={"backgroundColor": "white", "borderRadius": "10px", "padding": "15px", "boxShadow": "0px 0px 5px lightgray"}),
 
         ] , style={"width": "40%", "padding-left": "10px", "padding-right": "10px"}),
 
@@ -139,7 +139,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 
         html.Div(children=[
             html.Div("ניתוחים על פי מפה", style={"fontWeight": "bold", "fontSize": "20px", "marginBottom": "10px"}),
-            dcc.Graph(id="map-graph", style={"height": "500px"},config={"scrollZoom": True} )
+            dcc.Graph(id="map-graph", style={"height": "400px"},config={"scrollZoom": True} )
         ], style={
             "width": "100%",
             "backgroundColor": "white",
@@ -151,13 +151,40 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 
 
     ]),
-         html.Div(id="crime-ratio-container", style={"display": "none"}, children=[
-              html.H3("10 הערים המובילות ביחס פשיעה לנפש", style={"textAlign": "center"}),
-              dcc.Graph(
-                  id="crime-ratio-graph",
-                  style={"marginTop": "20px"}
-         )
-    ])
+
+# --------------------------------------------------- graphs -----------------------------------------------------------
+
+            html.Div(id="crime-ratio-container", style={
+                "display": "block",
+                "marginTop": "50px",
+            }, children=[
+                html.H3("ניתוחים סטטיסטיים", style={
+                    "textAlign": "right",
+                    "marginBottom": "20px",
+                    "marginTop": "10px",
+                    "paddingRight": "10px"
+                }),
+
+                # הגרף
+                dcc.Graph(id="crime-ratio-graph", style={
+                    "height": "300px",
+                    "width": "420px",
+                    "borderRadius": "10px",
+                    "boxShadow": "0 2px 8px rgba(0,0,0,0.1)",
+                    "paddingRight": "10px"
+                }),
+
+                # הפילטרים – מתחת לגרף
+                html.Div([
+                    html.Label("בחר סוג עבירה לניתוח:", style={"fontWeight": "bold", "paddingTop": "10px", "display": "block"}),
+                    dcc.Dropdown(id="filter-crime-type", placeholder="בחר סוג עבירה", style={"width": "410px","paddingRight": "10px"}),
+
+                    html.Label("חפש יישוב:", style={"fontWeight": "bold", "paddingTop": "10px", "display": "block"}),
+                    dcc.Input(id="filter-city", type="text", placeholder="לדוגמה: חיפה", style={"width": "420px","paddingRight": "10px"})
+                ])
+            ]),
+
+    html.Div([], style={"backgroundColor": "#e6f2ff", "height": "100px"})
 ])
 
 # ---------------------------------------------- callbacks (events) ----------------------------------------------------
@@ -208,50 +235,83 @@ def update_map(selected_year, selected_crime, selected_quarter, toggle_value, to
 
     fig.update_layout(
         margin={"r": 0, "t": 40, "l": 0, "b": 0},
-        hoverlabel=dict(bgcolor="white", font_size=14),
-        title="מפת פשיעה לפי בחירה",
+        hoverlabel=dict(bgcolor="white", font_size=14)
     )
 
     show_stats_style = {"display": "block"} if selected_year == 2024 else {"display": "none"}
     return fig, show_stats_style
 
+
 @app.callback(
     Output("crime-ratio-graph", "figure"),
-    Input("year-slider", "value")
+    Input("year-slider", "value"),
+    Input("filter-crime-type", "value"),
+    Input("filter-city", "value")
 )
-def update_crime_ratio_graph(selected_year):
+def update_crime_ratio_graph(selected_year, selected_type, input_city):
     if selected_year != 2024:
         return go.Figure()
 
     conn = sqlite3.connect("crime_2024.db")
-    crime_per_yeshuv = pd.read_sql("SELECT Yeshuv as יישוב, COUNT(*) as כמות_פשעים FROM crimes_2024 GROUP BY Yeshuv", conn)
+    crime_df = pd.read_sql("SELECT Yeshuv as יישוב, StatisticGroup as סוג_עבירה, COUNT(*) as כמות_פשעים FROM crimes_2024 GROUP BY Yeshuv, StatisticGroup", conn)
     population = pd.read_sql("SELECT `שם_ישוב` as יישוב, `סהכ` as סהכ_אוכלוסייה FROM population", conn)
     conn.close()
-    crime_per_yeshuv['יישוב_נקי'] = crime_per_yeshuv['יישוב'].apply(clean_city_name)
-    population['יישוב_נקי'] = population['יישוב'].apply(clean_city_name)
 
-    merged = pd.merge(crime_per_yeshuv, population, left_on='יישוב_נקי', right_on='יישוב_נקי', how='inner')
+    def clean_city_name(name):
+        if pd.isna(name):
+            return ""
+        return str(name).strip().replace('-', ' ').replace('"', '').replace("'", '').replace("־", ' ').replace('״', '').replace('׳', '')
+
+    crime_df["יישוב_נקי"] = crime_df["יישוב"].apply(clean_city_name)
+    population["יישוב_נקי"] = population["יישוב"].apply(clean_city_name)
+
+    if selected_type:
+        crime_df = crime_df[crime_df["סוג_עבירה"] == selected_type]
+
+    merged = pd.merge(crime_df, population, on="יישוב_נקי", how="inner")
     merged["פשיעה_לנפש"] = merged["כמות_פשעים"] / merged["סהכ_אוכלוסייה"]
+
     top10 = merged.sort_values(by="פשיעה_לנפש", ascending=False).head(10)
+
+    # הוספת יישוב מחיפוש אם הוא לא בטופ 10
+    if input_city:
+        input_city_clean = clean_city_name(input_city)
+        city_row = merged[merged["יישוב_נקי"].str.contains(input_city_clean, case=False)]
+        if not city_row.empty:
+            top10 = pd.concat([top10, city_row]).drop_duplicates(subset="יישוב_נקי")
+
+    colors = ["blue" if city == input_city else "indianred" for city in top10["יישוב_נקי"]]
 
     fig = go.Figure(go.Bar(
         x=top10["יישוב_נקי"],
         y=top10["פשיעה_לנפש"],
-        marker_color="indianred"
+        marker_color=colors
     ))
 
     fig.update_layout(
-        title="יחס פשיעה לנפש - 10 ערים מובילות",
         xaxis_title="עיר",
-        yaxis_title="פשיעה לנפש",
-        template="simple_white"
+        yaxis_title="יחס הפשיעה לנפש",
+        template="simple_white",
+        margin=dict(l=20, r=20, t=40, b=20),
+        xaxis=dict(tickangle=45)
     )
+
     return fig
 
-def clean_city_name(name):
-    if pd.isna(name):
-        return ""
-    return str(name).strip().replace('-', ' ').replace('"', '').replace("'", '').replace("־", ' ').replace('״', '').replace('׳', '').replace(" ", " ")
+@app.callback(
+    Output("filter-crime-type", "options"),
+    Input("year-slider", "value")
+)
+def populate_crime_type_options(year):
+    if year != 2024:
+        return []
+
+    conn = sqlite3.connect("crime_2024.db")
+    types = pd.read_sql("SELECT DISTINCT StatisticGroup as סוג_עבירה FROM crimes_2024", conn)
+    conn.close()
+
+    return [{"label": t, "value": t} for t in sorted(types["סוג_עבירה"].dropna().unique())]
+
 
 """ ---------------------------------------------------------------------------------------------------------------- """
 
