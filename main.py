@@ -7,7 +7,7 @@ import requests
 from dash import html, dcc, Output, Input
 import dash_bootstrap_components as dbc
 import json
-
+from rapidfuzz import process
 
 """ --------------------------------------------------- backend ---------------------------------------------------- """
 
@@ -31,6 +31,10 @@ df_population = pd.DataFrame.from_records(records)
 conn = sqlite3.connect("crime_2024.db") # DB connection
 df_population_clean = df_population[["שם_ישוב", "סהכ"]]
 df_population_clean.to_sql("population", conn, if_exists="replace", index=False)
+socio_df = pd.read_csv("socioeconomic_by_city.csv")
+socio_df["יישוב_נקי"] = socio_df["יישוב"].str.strip()
+city_coords_df = pd.read_csv("city_coordinates.csv")  # יש להכין קובץ עם עמודות: יישוב_נקי, lat, lon
+city_coords_df["יישוב_נקי"] = city_coords_df["יישוב_נקי"].apply(lambda x: str(x).strip())
 
 
 # ------------------------------------------------- queries ------------------------------------------------------------
@@ -152,6 +156,20 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 
     ]),
 
+# -------------------------------------------interactive graphs -----------------------------------------------------------
+
+            html.Div([
+                html.H3("פשיעה לנפש מול דירוג חברתי־כלכלי", style={"textAlign": "right"}),
+                dcc.Graph(id="scatter-socio-graph", style={"height": "400px"})
+            ], style={
+                "width": "100%",
+                "marginTop": "40px",
+                "backgroundColor": "white",
+                "padding": "20px",
+                "borderRadius": "10px",
+                "boxShadow": "0px 0px 8px #b3cde0"
+            }),
+
 # --------------------------------------------------- graphs -----------------------------------------------------------
 
             html.Div(id="crime-ratio-container", style={
@@ -226,20 +244,137 @@ def update_map(selected_year, selected_crime, selected_quarter, toggle_value, to
         )
 
     if "stations" in toggle_police:
-        fig.add_scattermapbox(
-            lat=df_police["lat"], lon=df_police["lon"], mode="markers",
-            marker=dict(size=8, color="blue"),
-            text=df_police["Station"],
-            name="תחנת משטרה"
-        )
+        fig.add_trace(go.Scattermapbox(
+            lat=df_police["lat"],
+            lon=df_police["lon"],
+            marker=dict(size=7, color="blue", symbol="circle"),
+            text=["🚓 תחנה"] * len(df_police),
+            mode="markers+text",
+            name="תחנות משטרה"
+        ))
 
     fig.update_layout(
+        mapbox_style="carto-positron",
+        mapbox_zoom=6.5,
+        mapbox_center={"lat": 31.5, "lon": 34.75},
         margin={"r": 0, "t": 40, "l": 0, "b": 0},
         hoverlabel=dict(bgcolor="white", font_size=14)
     )
 
     show_stats_style = {"display": "block"} if selected_year == 2024 else {"display": "none"}
     return fig, show_stats_style
+
+def match_names_fuzzy(source_names, target_names, threshold=85):
+    mapping = {}
+    for name in source_names:
+        match, score, _ = process.extractOne(name, target_names)
+        if score >= threshold:
+            mapping[name] = match
+    return mapping
+
+# Callback חדש
+@app.callback(
+    Output("scatter-socio-graph", "figure"),
+    Input("year-slider", "value"),
+    Input("crime-type-dropdown", "value"),
+    Input("quarter-dropdown", "value"),
+    Input("map-graph", "relayoutData")
+)
+def update_scatter_graph(year, crime_type, quarter, relayoutData):
+    conn = sqlite3.connect("crime_2024.db")
+    crime_df = pd.read_sql("SELECT Yeshuv as יישוב, StatisticGroup as סוג_עבירה, Quarter as רבעון, Year as שנה, COUNT(*) as כמות_פשעים FROM crimes_2024 GROUP BY Yeshuv, StatisticGroup, Quarter, Year", conn)
+    population = pd.read_sql("SELECT `שם_ישוב` as יישוב, `סהכ` as סהכ_אוכלוסייה FROM population", conn)
+    conn.close()
+
+    def clean_name(name):
+        name = str(name).strip().replace('-', ' ').replace('־', ' ').replace("'", '').replace('"', '')
+        name = name.replace("תל אביב יפו", "תל אביב")
+        name = name.replace("תל אביב -יפו", "תל אביב")
+        return name
+
+
+    # שלב ניקוי
+    crime_df["יישוב_נקי"] = crime_df["יישוב"].apply(clean_name)
+    population["יישוב_נקי"] = population["יישוב"].apply(clean_name)
+    socio_df["יישוב_נקי"] = socio_df["יישוב"].apply(clean_name)
+    city_coords_df["יישוב_נקי"] = city_coords_df["יישוב_נקי"].apply(clean_name)
+
+    # תיקון שמות יישובים בעזרת fuzzy matching
+    crime_names = crime_df["יישוב_נקי"].unique()
+    coords_map = match_names_fuzzy(crime_names, city_coords_df["יישוב_נקי"].unique())
+    pop_map = match_names_fuzzy(crime_names, population["יישוב_נקי"].unique())
+    socio_map = match_names_fuzzy(crime_names, socio_df["יישוב_נקי"].unique())
+
+    crime_df["יישוב_נקי"] = crime_df["יישוב_נקי"].apply(lambda x: coords_map.get(x, x))
+    crime_df["יישוב_נקי"] = crime_df["יישוב_נקי"].apply(lambda x: pop_map.get(x, x))
+    crime_df["יישוב_נקי"] = crime_df["יישוב_נקי"].apply(lambda x: socio_map.get(x, x))
+
+    df_filtered = crime_df[crime_df["שנה"] == year]
+    if crime_type != "כלל העבירות":
+        df_filtered = df_filtered[df_filtered["סוג_עבירה"] == crime_type]
+    if quarter != "כל השנה":
+        quarter_map = {"ינואר-מרץ": "Q1", "אפריל-יוני": "Q2", "יולי-ספטמבר": "Q3", "אוקטובר-דצמבר": "Q4"}
+        df_filtered = df_filtered[df_filtered["רבעון"] == quarter_map.get(quarter, "")]
+
+    merged = pd.merge(df_filtered, population, on="יישוב_נקי", how="inner")
+    merged = pd.merge(merged, socio_df, on="יישוב_נקי", how="inner")
+    merged = pd.merge(merged, city_coords_df, on="יישוב_נקי", how="inner")
+    merged = merged.dropna(subset=["lat", "lon", "דירוג_חברתי_כלכלי", "סהכ_אוכלוסייה"])
+    merged["דירוג_חברתי_כלכלי"] = pd.to_numeric(merged["דירוג_חברתי_כלכלי"], errors="coerce")
+
+    if relayoutData and "mapbox._derived" in relayoutData:
+        bounds = relayoutData["mapbox._derived"].get("coordinates", [])
+        if bounds and isinstance(bounds, list):
+            lons = [pt[0] for pt in bounds]
+            lats = [pt[1] for pt in bounds]
+            lon_min, lon_max = min(lons), max(lons)
+            lat_min, lat_max = min(lats), max(lats)
+            merged = merged[(merged["lon"] >= lon_min) & (merged["lon"] <= lon_max) &
+                            (merged["lat"] >= lat_min) & (merged["lat"] <= lat_max)]
+
+    grouped = merged.groupby(["יישוב_נקי", "דירוג_חברתי_כלכלי"], as_index=False).agg({
+        "כמות_פשעים": "sum",
+        "סהכ_אוכלוסייה": "first"
+    })
+    grouped["פשיעה_לנפש"] = grouped["כמות_פשעים"] / grouped["סהכ_אוכלוסייה"]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=grouped["דירוג_חברתי_כלכלי"],
+        y=grouped["פשיעה_לנפש"],
+        mode="markers",
+        text=grouped["יישוב_נקי"],
+        marker=dict(
+            size=10,
+            color=grouped["דירוג_חברתי_כלכלי"],
+            colorscale="Viridis",
+            showscale=True
+        )
+    ))
+    top_points = grouped.loc[grouped.groupby("דירוג_חברתי_כלכלי")["פשיעה_לנפש"].idxmax()]
+    top_points = top_points.sort_values("דירוג_חברתי_כלכלי")
+    fig.add_trace(go.Scatter(
+        x=top_points["דירוג_חברתי_כלכלי"],
+        y=top_points["פשיעה_לנפש"],
+        mode="lines+markers",
+        name="קו עליון",
+        line=dict(color="red", width=2, dash="dash")
+    ))
+    fig.update_layout(
+        xaxis_title="דירוג חברתי-כלכלי (1=נמוך, 10=גבוה)",
+        yaxis_title="פשיעה לנפש",
+        template="simple_white",
+        margin=dict(l=20, r=20, t=40, b=20)
+    )
+    return fig
+
+
+
+
+
+
+
+
 
 
 @app.callback(
