@@ -8,6 +8,7 @@ from dash import html, dcc, Output, Input
 import dash_bootstrap_components as dbc
 import json
 from rapidfuzz import process
+from geopy.distance import geodesic
 
 """ --------------------------------------------------- backend ---------------------------------------------------- """
 
@@ -170,6 +171,31 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                 "boxShadow": "0px 0px 8px #b3cde0"
             }),
 
+            html.Div([
+                    html.H3("פשיעה לפי רבעונים ביישובים נוכחיים", style={"textAlign": "right"}),
+                    dcc.Graph(id="quarterly-crime-graph", style={"height": "400px"})
+                ], style={
+                    "width": "100%",
+                    "marginTop": "40px",
+                    "backgroundColor": "white",
+                    "padding": "20px",
+                    "borderRadius": "10px",
+                    "boxShadow": "0px 0px 8px #b3cde0"
+                }),
+
+            html.Div([
+                html.H3("בחר יישוב להצגת נתונים סטטיסטיים", style={"textAlign": "right"}),
+                dcc.Dropdown(id="city-scope-dropdown", placeholder="בחר יישוב מהתצוגה במפה"),
+                html.Div(id="city-details-panel")
+            ], style={
+                "width": "100%",
+                "marginTop": "40px",
+                "backgroundColor": "white",
+                "padding": "20px",
+                "borderRadius": "10px",
+                "boxShadow": "0px 0px 8px #b3cde0"
+            }),
+
 # --------------------------------------------------- graphs -----------------------------------------------------------
 
             html.Div(id="crime-ratio-container", style={
@@ -264,15 +290,6 @@ def update_map(selected_year, selected_crime, selected_quarter, toggle_value, to
     show_stats_style = {"display": "block"} if selected_year == 2024 else {"display": "none"}
     return fig, show_stats_style
 
-def match_names_fuzzy(source_names, target_names, threshold=85):
-    mapping = {}
-    for name in source_names:
-        match, score, _ = process.extractOne(name, target_names)
-        if score >= threshold:
-            mapping[name] = match
-    return mapping
-
-# Callback חדש
 @app.callback(
     Output("scatter-socio-graph", "figure"),
     Input("year-slider", "value"),
@@ -286,28 +303,17 @@ def update_scatter_graph(year, crime_type, quarter, relayoutData):
     population = pd.read_sql("SELECT `שם_ישוב` as יישוב, `סהכ` as סהכ_אוכלוסייה FROM population", conn)
     conn.close()
 
-    def clean_name(name):
-        name = str(name).strip().replace('-', ' ').replace('־', ' ').replace("'", '').replace('"', '')
-        name = name.replace("תל אביב יפו", "תל אביב")
-        name = name.replace("תל אביב -יפו", "תל אביב")
-        return name
+    socio_df = pd.read_csv("socioeconomic_by_city.csv")
+    city_coords_df = pd.read_csv("city_coordinates.csv")
 
+    crime_df = apply_city_name_normalization(crime_df, "יישוב")
+    population = apply_city_name_normalization(population, "יישוב")
+    socio_df = apply_city_name_normalization(socio_df, "יישוב")
+    city_coords_df = apply_city_name_normalization(city_coords_df, "יישוב_נקי")
 
-    # שלב ניקוי
-    crime_df["יישוב_נקי"] = crime_df["יישוב"].apply(clean_name)
-    population["יישוב_נקי"] = population["יישוב"].apply(clean_name)
-    socio_df["יישוב_נקי"] = socio_df["יישוב"].apply(clean_name)
-    city_coords_df["יישוב_נקי"] = city_coords_df["יישוב_נקי"].apply(clean_name)
-
-    # תיקון שמות יישובים בעזרת fuzzy matching
-    crime_names = crime_df["יישוב_נקי"].unique()
-    coords_map = match_names_fuzzy(crime_names, city_coords_df["יישוב_נקי"].unique())
-    pop_map = match_names_fuzzy(crime_names, population["יישוב_נקי"].unique())
-    socio_map = match_names_fuzzy(crime_names, socio_df["יישוב_נקי"].unique())
-
-    crime_df["יישוב_נקי"] = crime_df["יישוב_נקי"].apply(lambda x: coords_map.get(x, x))
-    crime_df["יישוב_נקי"] = crime_df["יישוב_נקי"].apply(lambda x: pop_map.get(x, x))
-    crime_df["יישוב_נקי"] = crime_df["יישוב_נקי"].apply(lambda x: socio_map.get(x, x))
+    crime_df.rename(columns={"יישוב": "יישוב_נקי"}, inplace=True)
+    population.rename(columns={"יישוב": "יישוב_נקי"}, inplace=True)
+    socio_df.rename(columns={"יישוב": "יישוב_נקי"}, inplace=True)
 
     df_filtered = crime_df[crime_df["שנה"] == year]
     if crime_type != "כלל העבירות":
@@ -370,10 +376,150 @@ def update_scatter_graph(year, crime_type, quarter, relayoutData):
 
 
 
+@app.callback(
+    Output("quarterly-crime-graph", "figure"),
+    Input("year-slider", "value"),
+    Input("crime-type-dropdown", "value"),
+    Input("map-graph", "relayoutData")
+)
+def update_quarterly_graph(year, crime_type, relayoutData):
+    conn = sqlite3.connect("crime_2024.db")
+    crime_df = pd.read_sql("""
+        SELECT Yeshuv as יישוב, StatisticGroup as סוג_עבירה,
+               Quarter as רבעון, Year as שנה, COUNT(*) as כמות_פשעים
+        FROM crimes_2024
+        GROUP BY Yeshuv, StatisticGroup, Quarter, Year
+    """, conn)
+    conn.close()
+
+    city_coords_df = pd.read_csv("city_coordinates.csv")
+    crime_df = apply_city_name_normalization(crime_df, "יישוב")
+    city_coords_df = apply_city_name_normalization(city_coords_df, "יישוב_נקי")
+
+    crime_df.rename(columns={"יישוב": "יישוב_נקי"}, inplace=True)
+
+    if crime_type != "כלל העבירות":
+        crime_df = crime_df[crime_df["סוג_עבירה"] == crime_type]
+
+    crime_df = crime_df[crime_df["שנה"] == year]
+
+    merged = pd.merge(crime_df, city_coords_df, on="יישוב_נקי", how="inner")
+    merged = merged.dropna(subset=["lat", "lon"])
+
+    if relayoutData and "mapbox._derived" in relayoutData:
+        bounds = relayoutData["mapbox._derived"].get("coordinates", [])
+        if bounds and isinstance(bounds, list):
+            lons = [pt[0] for pt in bounds]
+            lats = [pt[1] for pt in bounds]
+            lon_min, lon_max = min(lons), max(lons)
+            lat_min, lat_max = min(lats), max(lats)
+            merged = merged[(merged["lon"] >= lon_min) & (merged["lon"] <= lon_max) &
+                            (merged["lat"] >= lat_min) & (merged["lat"] <= lat_max)]
+
+    pivot = merged.pivot_table(
+        index="יישוב_נקי",
+        columns="רבעון",
+        values="כמות_פשעים",
+        aggfunc="sum",
+        fill_value=0
+    ).reset_index()
+
+    fig = go.Figure()
+    quarters = ["Q1", "Q2", "Q3", "Q4"]
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+
+    for i, q in enumerate(quarters):
+        if q in pivot.columns:
+            fig.add_trace(go.Bar(
+                x=pivot["יישוב_נקי"],
+                y=pivot[q],
+                name=f"{q}",
+                marker_color=colors[i]
+            ))
+
+    fig.update_layout(
+        barmode="group",
+        xaxis_title="יישוב",
+        yaxis_title="מספר עבירות",
+        template="simple_white",
+        margin=dict(l=20, r=20, t=40, b=80)
+    )
+    return fig
 
 
+def normalize_city_name(name):
+    if not isinstance(name, str):
+        return ""
+    name = name.strip()
+    name = name.replace("־", "-").replace("–", "-").replace("'", "").replace('"', "")
+    name = name.replace("-", " ")
+    name = " ".join(name.split())  # remove double spaces
+    return name
+
+def apply_city_name_normalization(df, column):
+    df[column] = df[column].astype(str).apply(normalize_city_name)
+    return df
+
+@app.callback(
+    Output("city-scope-dropdown", "options"),
+    Input("map-graph", "relayoutData"),
+)
+def update_city_dropdown(relayoutData):
+    city_df = pd.read_csv("city_coordinates.csv")
+    city_df = apply_city_name_normalization(city_df, "יישוב_נקי")
+
+    if relayoutData and "mapbox._derived" in relayoutData:
+        bounds = relayoutData["mapbox._derived"].get("coordinates", [])
+        if bounds and isinstance(bounds, list):
+            lons = [pt[0] for pt in bounds]
+            lats = [pt[1] for pt in bounds]
+            lon_min, lon_max = min(lons), max(lons)
+            lat_min, lat_max = min(lats), max(lats)
+            city_df = city_df[(city_df["lon"] >= lon_min) & (city_df["lon"] <= lon_max) &
+                              (city_df["lat"] >= lat_min) & (city_df["lat"] <= lat_max)]
+
+    city_names = [city for city in city_df["יישוב_נקי"].unique() if pd.notna(city)]
+    return [{"label": city, "value": city} for city in sorted(set(city_names))]
 
 
+@app.callback(
+    Output("city-details-panel", "children"),
+    Input("city-scope-dropdown", "value"),
+    Input("year-slider", "value")
+)
+def display_city_statistics(selected_city, year):
+    if not selected_city:
+        return html.Div()
+
+    clean_city = normalize_city_name(selected_city)
+
+    conn = sqlite3.connect("crime_2024.db")
+    crimes_raw = pd.read_sql("SELECT Yeshuv, StatisticGroup as סוג_עבירה FROM crimes_2024 WHERE Year = ?", conn, params=(year,))
+    conn.close()
+
+    crimes_raw = apply_city_name_normalization(crimes_raw, "Yeshuv")
+    crimes_raw.rename(columns={"Yeshuv": "יישוב_נקי"}, inplace=True)
+
+    crime_df = crimes_raw[crimes_raw["יישוב_נקי"] == clean_city]
+
+    if crime_df.empty:
+        return html.Div([html.P("לא נמצאו נתוני פשיעה עבור היישוב שבחרת.", style={"textAlign": "right", "color": "red"})])
+
+    crime_summary = crime_df.groupby("סוג_עבירה").size().reset_index(name="כמות")
+    total_crimes = crime_summary["כמות"].sum()
+    avg_per_type = crime_summary["כמות"].mean()
+
+    fig = go.Figure(data=[
+        go.Pie(labels=crime_summary["סוג_עבירה"], values=crime_summary["כמות"], hole=0.3)
+    ])
+    fig.update_layout(title=f"התפלגות סוגי פשיעה - {selected_city}")
+
+    return html.Div([
+        html.H4(f"נתונים עבור יישוב: {selected_city}", style={"textAlign": "right"}),
+        html.P(f"סך כל מקרי הפשיעה בשנת {year}: {total_crimes}", style={"textAlign": "right"}),
+        html.P(f"ממוצע עבירות לכל סוג: {avg_per_type:.2f}", style={"textAlign": "right"}),
+        dcc.Graph(figure=fig)
+    ])
 
 
 
