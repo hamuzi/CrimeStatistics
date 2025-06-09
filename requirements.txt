@@ -1,4 +1,6 @@
 dash
 dash-bootstrap-components
-pandas
 plotly
+pandas
+requests
+sqlite3 
