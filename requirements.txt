@@ -3,4 +3,3 @@ dash-bootstrap-components
 plotly
 pandas
 requests
-sqlite3 
