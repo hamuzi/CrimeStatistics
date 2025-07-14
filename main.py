@@ -7,6 +7,7 @@ import requests
 from dash import html, dcc, Output, Input
 import dash_bootstrap_components as dbc
 import json
+from dash import ALL, ctx
 
 """ --------------------------------------------------- backend ---------------------------------------------------- """
 
@@ -58,7 +59,7 @@ quarter_options = ["כל השנה"] + sorted(crime_filters["תיאור_רבעו�
 
 """ ----------------------------------------------- frontend ------------------------------------------------------- """
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP]) # create Dash
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True) # create Dash
 app.title = "מפת פשיעה לפי יישובים"
 
 # --------------------------------------------------- Header -----------------------------------------------------------
@@ -155,7 +156,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 
 # -------------------------------------------interactive graphs -----------------------------------------------------------
 
-    html.Div([
+    html.Div(id="analysis-container", children=[
         html.H3("גרפים אינטראקטיביים", style={"textAlign": "right", "marginBottom": "20px"}),
 
         html.Div(style={"display": "flex", "gap": "20px"}, children=[
@@ -169,13 +170,27 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
                 dcc.Graph(id="quarterly-crime-graph", style={"height": "400px"})
             ], style={"width": "50%"})
         ]),
+        html.Div(style={"display": "flex", "gap": "20px","padding-top" : "20px"}, children=[
+            html.Div([
+                html.H5("בחר יישוב להצגת נתונים סטטיסטיים", style={"textAlign": "right"}),
+                dcc.Dropdown(id="city-scope-dropdown", placeholder="בחר יישוב מהתצוגה במפה"),
+                html.Div(id="city-details-panel")
+            ], style={"width": "50%"}),
 
-        html.Div([
-            html.H5("בחר יישוב להצגת נתונים סטטיסטיים", style={"textAlign": "right"}),
-            dcc.Dropdown(id="city-scope-dropdown", placeholder="בחר יישוב מהתצוגה במפה"),
-            html.Div(id="city-details-panel")
-        ], style={"marginTop": "40px", "width": "50%"})
-
+            html.Div([
+                html.Button("📤 ייצוא נתונים", id="toggle-export-list", n_clicks=0, style={
+                    "backgroundColor": "#0d1a33",
+                    "color": "white",
+                    "padding": "10px 20px",
+                    "fontSize": "18px",
+                    "borderRadius": "8px",
+                    "cursor": "pointer",
+                    "marginBottom": "10px"
+                }),
+                html.Div(id="export-list-wrapper", style={"marginTop": "10px", "textAlign": "right"})
+            ], style={"width": "50%", "display": "flex", "flexDirection": "column", "justifyContent": "flex-start",
+                      "alignItems": "flex-end"})
+        ])
     ], style={
         "width": "96%",
         "margin": "40px auto 0",
@@ -202,7 +217,7 @@ app.layout = html.Div(style={"backgroundColor": "#e6f2ff", "direction": "rtl"}, 
 # --------------------------------------------------- Update -----------------------------------------------------------
 
 def update_map(selected_year, selected_crime, selected_quarter, toggle_value, toggle_police, relayoutData=None):
-    filtered = crime_filters[crime_filters["שנה"] == selected_year]
+    filtered = load_crime_data_for_year(selected_year)
     if selected_crime != "כלל העבירות":
         filtered = filtered[filtered["סוג_עבירה"] == selected_crime]
     if selected_quarter != "כל השנה":
@@ -501,7 +516,115 @@ def display_city_statistics(selected_city, year):
         dcc.Graph(figure=fig)
     ])
 
+def load_crime_data_for_year(year):
+    table_name = f"crimes_{year}"
+    conn = sqlite3.connect("crime_2024.db")
 
+    query = f"""
+        SELECT 
+            Yeshuv as יישוב,
+            PoliceDistrict as מחוז_משטרתי,
+            StatisticGroup as סוג_עבירה,
+            Quarter as רבעון,
+            Year as שנה
+        FROM {table_name}
+        WHERE Yeshuv IS NOT NULL AND StatisticGroup IS NOT NULL
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+
+    df["כמות_פשעים"] = 1
+    df["תיאור_רבעון"] = df["רבעון"].map({
+        "Q1": "ינואר-מרץ",
+        "Q2": "אפריל-יוני",
+        "Q3": "יולי-ספטמבר",
+        "Q4": "אוקטובר-דצמבר"
+    })
+    return df
+
+@app.callback(
+    Output("analysis-container", "style"),
+    Input("year-slider", "value")
+)
+def toggle_analysis_visibility(selected_year):
+    if selected_year == 2024:
+        return {
+            "width": "96%",
+            "margin": "40px auto 0",
+            "backgroundColor": "#e6f2ff",
+            "padding": "20px",
+            "borderRadius": "12px",
+            "boxShadow": "0 0 6px #99badd",
+            "border": "3px solid #99badd",
+            "display": "block"
+        }
+    else:
+        return {"display": "none"}
+
+from dash import ctx
+
+@app.callback(
+    Output("export-list-wrapper", "children"),
+    Input("toggle-export-list", "n_clicks"),
+    prevent_initial_call=True
+)
+def toggle_export_list(n_clicks):
+    # Toggle פתיחה/סגירה לפי מספר זוגי/אי זוגי של לחיצות
+    if n_clicks % 2 == 0:
+        return None
+
+    file_labels = [
+        ("crimes_2020", "📄 פשיעה 2020"),
+        ("crimes_2021", "📄 פשיעה 2021"),
+        ("crimes_2022", "📄 פשיעה 2022"),
+        ("crimes_2023", "📄 פשיעה 2023"),
+        ("crimes_2024", "📄 פשיעה 2024"),
+        ("police_stations", "📄 תחנות משטרה"),
+        ("socioeconomic_by_city", "📄 נתונים סוציו־אקונומיים"),
+        ("city_coordinates", "📄 קואורדינטות יישובים"),
+        ("municipalities", "🗺️ גבולות יישובים (GeoJSON)"),
+        ("districts", "🗺️ גבולות מחוזות (GeoJSON)")
+    ]
+
+    return html.Div([
+        html.Ul([
+            html.Li(
+                html.A(label, href="#", id={"type": "export-link", "index": key}, style={
+                    "fontSize": "16px", "color": "#0d1a33", "textDecoration": "underline", "cursor": "pointer"
+                })
+            ) for key, label in file_labels
+        ], style={"listStyleType": "none", "padding": "0"}),
+        dcc.Download(id="download-any")
+    ])
+
+@app.callback(
+    Output("download-any", "data"),
+    Input({"type": "export-link", "index": ALL}, "n_clicks"),
+    prevent_initial_call=True
+)
+def handle_download(n_clicks_list):
+    triggered = ctx.triggered_id
+    if not triggered:
+        return None
+
+    file_key = triggered["index"]
+
+    if file_key.startswith("crimes_"):
+        year = file_key.split("_")[1]
+        conn = sqlite3.connect("crime_2024.db")
+        df = pd.read_sql(f"SELECT * FROM crimes_{year}", conn)
+        conn.close()
+        return dcc.send_data_frame(df.to_csv, f"{file_key}.csv", index=False)
+
+    elif file_key in ["police_stations", "socioeconomic_by_city", "city_coordinates"]:
+        df = pd.read_csv(f"{file_key}.csv")
+        return dcc.send_data_frame(df.to_csv, f"{file_key}.csv", index=False)
+
+    elif file_key in ["municipalities", "districts"]:
+        with open(f"{file_key}.geojson", "r", encoding="utf-8") as f:
+            return dict(content=f.read(), filename=f"{file_key}.geojson", type="text/geojson")
+
+    return None
 
 """ ---------------------------------------------------------------------------------------------------------------- """
 
